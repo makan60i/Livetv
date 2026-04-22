@@ -264,27 +264,37 @@ function parseMatches(html, baseUrl) {
 
   doc.querySelectorAll('a[href]').forEach(a => {
     const href = a.getAttribute('href') || '';
-    const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
 
-    // Construire l'URL absolue
+    // Sur livetv877.me, TOUS les vrais matchs ont une URL /eventinfo/
+    if (!href.includes('/eventinfo/')) return;
+
     let fullUrl = '';
     try { fullUrl = new URL(href, baseUrl).href; } catch { return; }
-
     if (seen.has(fullUrl)) return;
-    if (!text || text.length < 4 || text.length > 120) return;
-    if (fullUrl === BASE_URL || fullUrl === baseUrl) return;
 
-    // Filtrer les liens qui ressemblent à des matchs (contiennent vs, -, ou sont des sous-pages)
-    const looksLikeMatch =
-      text.includes(' - ') || text.includes(' vs ') || text.includes(' v ') ||
-      text.includes(' / ') ||
-      /\d{1,2}[h:]\d{2}/.test(text) ||
-      (fullUrl.includes('/') && !fullUrl.endsWith('/frx/'));
+    // Récupérer le texte du lien ET du bloc parent (contient sport + compétition)
+    const row = a.closest('tr, td, div, li') || a;
+    const blockText = (row.textContent || '').replace(/\s+/g, ' ').trim();
+    const linkText  = (a.textContent || '').replace(/\s+/g, ' ').trim();
 
-    if (!looksLikeMatch) return;
+    // Utiliser le texte du lien si c'est un nom de match (contient " - " ou " – ")
+    let title = linkText;
+    if (!title || title.length < 3) return;
+
+    // Extraire le sport/compétition depuis le contexte si possible
+    const sportMatch = blockText.match(/^([^|]+?\.\s+[^|.]+?\.\s+[^|.]+?)\s+[\[|]/);
+    const sport = sportMatch ? sportMatch[1].trim() : '';
+
+    // Chercher un score ou une heure dans le bloc
+    const score = blockText.match(/\d+:\d+/)?.[0] || '';
+    const time  = blockText.match(/\d{2}:\d{2}\s*\(/)?.[0]?.replace('(','').trim() || '';
+
+    // Construire un label propre
+    const meta = [sport, score, time].filter(Boolean).join(' · ');
+    const label = meta ? `${title}  ${meta}` : title;
 
     seen.add(fullUrl);
-    results.push({ url: fullUrl, title: text });
+    results.push({ url: fullUrl, title: label, matchTitle: title, meta });
   });
 
   return results;
@@ -383,10 +393,10 @@ function renderMatches(matches) {
   list.innerHTML = `<div class="day-label">🔴 En direct — ${matches.length} match${matches.length > 1 ? 's' : ''}</div>` +
     matches.map((m, i) => `
       <div class="match-card" data-idx="${i}" onclick="openMatch(${i})">
-        <div class="match-icon">${getIcon(m.title)}</div>
+        <div class="match-icon">${getIcon(m.matchTitle || m.title)}</div>
         <div class="match-info">
-          <div class="match-title">${escHtml(m.title)}</div>
-          <div class="match-meta">${m.demo ? 'Mode démo' : new URL(m.url).hostname}</div>
+          <div class="match-title">${escHtml(m.matchTitle || m.title)}</div>
+          <div class="match-meta">${m.demo ? 'Mode démo' : escHtml(m.meta || '')}</div>
         </div>
         <div class="match-badge">LIVE</div>
       </div>
